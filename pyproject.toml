@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "tei2epub"
+version = "0.1.0"
+description = "Convert Corpus Corporum TEI XML files to EPUB 3 e-books."
+authors = ["William Webber <wew@cassiodorus.ink>"]
+license = "MIT"
+readme = "README.md"
+include = ["tei2epub/py.typed", "tei2epub/style.css"]
+
+[tool.poetry.scripts]
+tei2epub = "tei2epub.__main__:main"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+lxml = "^6.0.2"
+ebooklib = "^0.20"
+Pillow = "^11.0.0"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.5.1"
+pyflakes = "^3.1.0"
+lxml-stubs = "^0.5.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+ignore_missing_imports = false
+files = ["tei2epub"]
+check_untyped_defs = true

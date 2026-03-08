@@ -1,0 +1,232 @@
+/* Stylesheet for TEI-to-EPUB conversions of Patrologia Latina texts. */
+
+body {
+    font-family: serif;
+    line-height: 1.6;
+    margin: 1em;
+}
+
+/* Chapter headings: "CAPUT I.— Summary text..." */
+h2 {
+    font-size: 1.15em;
+    font-weight: bold;
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+    line-height: 1.4;
+}
+
+/* Section headings: numbered paragraphs like "1.", "2." */
+h3 {
+    font-size: 1em;
+    font-weight: bold;
+    margin-top: 1.5em;
+    margin-bottom: 0.3em;
+}
+
+p {
+    margin: 0.4em 0;
+    text-align: justify;
+    text-indent: 1.5em;
+}
+
+/* First paragraph after a heading should not be indented. */
+h2 + section > p:first-of-type,
+h3 + p {
+    text-indent: 0;
+}
+
+/* Paragraph following a verse quotation (block-level or inline
+   verse-group): no indent.  Standard typographic convention — the
+   displayed verse already provides sufficient visual separation. */
+blockquote.verse + p,
+p.no-indent {
+    text-indent: 0;
+}
+
+em {
+    font-style: italic;
+}
+
+/* Migne column markers: displayed as marginal numbers.
+   float: right with negative margin pushes them into the
+   right margin area on e-readers that support it. */
+.pb {
+    float: right;
+    clear: right;
+    font-size: 0.65em;
+    color: #999;
+    font-style: normal;
+    font-weight: normal;
+    margin-right: -2.5em;
+    margin-top: 0.2em;
+    line-height: 1;
+}
+
+/* Block-level page break markers (between sections). */
+.pb-block {
+    text-indent: 0;
+    margin: 0;
+    padding: 0;
+    line-height: 0.5;
+}
+
+/* Footnote reference superscripts. */
+sup a {
+    text-decoration: none;
+    color: #666;
+    font-size: 0.75em;
+}
+
+/* Separator before footnotes section. */
+hr.notes-sep {
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+    border: none;
+    border-top: 1px solid #ccc;
+    width: 30%;
+    margin-left: 0;
+}
+
+/* Footnote entries. */
+aside[epub|type="footnote"],
+aside[role="doc-footnote"] {
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+aside[epub|type="footnote"] p,
+aside[role="doc-footnote"] p {
+    margin: 0.2em 0;
+    text-indent: 0;
+}
+
+/* Back-link from footnote to reference. */
+aside a {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* Group of verse lines within a prose paragraph. */
+.verse-group {
+    display: block;
+    margin: 0.6em 0 0.6em 2em;
+    font-style: italic;
+}
+
+/* Individual verse line within a verse-group or inline fallback. */
+.verse-group > .verse-line {
+    display: block;
+}
+
+.verse-line {
+    font-style: italic;
+}
+
+/* Block verse quotations (<lg>). */
+blockquote.verse {
+    margin: 1em 0 1em 2em;
+    padding: 0;
+    font-style: italic;
+}
+
+blockquote.verse p.verse-line {
+    text-indent: 0;
+    text-align: left;
+    margin: 0.1em 0;
+}
+
+blockquote.verse p.verse-indent {
+    padding-left: 2em;
+}
+
+/* Foreign language spans (<foreign>). */
+.foreign {
+    font-style: italic;
+}
+
+/* Group title pages (book/sermon dividers). */
+.group-title {
+    text-align: center;
+    padding-top: 10%;
+}
+
+.group-title h1 {
+    font-size: 1.4em;
+    font-weight: bold;
+    line-height: 1.5;
+    margin: 0 1em;
+}
+
+.group-title h1 em {
+    display: block;
+    font-size: 0.85em;
+    font-weight: normal;
+    margin-top: 0.5em;
+}
+
+/* Title page. */
+.title-page {
+    text-align: center;
+    padding-top: 25%;
+}
+
+.title-page p {
+    text-indent: 0;
+    text-align: center;
+    margin: 0.2em 1em;
+}
+
+.tp-title {
+    font-size: 1.6em;
+    font-weight: bold;
+    line-height: 1.4;
+    margin-bottom: 0.4em !important;
+}
+
+.tp-author {
+    font-size: 1.2em;
+    font-variant: small-caps;
+    margin-bottom: 1.5em !important;
+}
+
+.tp-series {
+    margin-top: 1.5em;
+    font-size: 0.9em;
+    color: #444;
+}
+
+.tp-series p {
+    text-indent: 0;
+    text-align: center;
+    margin: 0.15em 1em;
+}
+
+/* Colophon (credits) page. */
+.colophon {
+    text-align: center;
+    padding-top: 25%;
+    font-size: 0.9em;
+    color: #444;
+}
+
+.colophon p {
+    text-indent: 0;
+    text-align: center;
+    margin: 0.15em 1em;
+}
+
+.co-source {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #222;
+    margin-top: 0.1em !important;
+    margin-bottom: 0.1em !important;
+}
+
+.co-sep {
+    text-indent: 0;
+    text-align: center;
+    margin: 1.2em 0;
+    color: #999;
+    letter-spacing: 0.3em;
+}

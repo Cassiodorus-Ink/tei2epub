@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# mypy
+.mypy_cache/
+
+# pytest
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Local data (TEI input files and EPUB output)
+local/
