@@ -153,6 +153,7 @@ class Work:
     """
     title: str = ""
     author: str = ""
+    author_dates: str = ""
     editor: str = ""
     publisher: str = ""
     pub_place: str = ""
@@ -163,3 +164,24 @@ class Work:
     language: str = "la"
     preamble: Chapter | None = None
     chapters: list[TopLevelItem] = field(default_factory=list)
+
+
+@dataclass
+class Bundle:
+    """A built EPUB together with its metadata and cover image.
+
+    This is the intermediate artefact produced by the conversion
+    pipeline: it holds everything needed to write the EPUB file to
+    disk and to generate a catalog entry on a website.
+
+    Attributes:
+        work: The Work model (metadata and structure).
+        epub_bytes: The EPUB file content as bytes.
+        cover_png: The cover image as PNG bytes.
+        source_filename: The original TEI XML filename (stem only,
+            e.g. ``"031_Augustinus-Hipponensis_Confessiones"``).
+    """
+    work: Work
+    epub_bytes: bytes
+    cover_png: bytes
+    source_filename: str = ""

@@ -131,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
 
     built = 0
     failed = 0
+
     for xml_path, epub_path in to_build:
         rel_in = xml_path.relative_to(input_dir)
         rel_out = epub_path.relative_to(output_dir)

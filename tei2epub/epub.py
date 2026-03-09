@@ -6,6 +6,8 @@ navigation document, spine ordering, and ZIP packaging.
 
 from __future__ import annotations
 
+import io
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -32,24 +34,34 @@ def _load_css() -> str:
 def _plain_heading(chapter: Chapter) -> str:
     """Extract a plain-text heading string for TOC entries."""
     text = _heading_plain_text(chapter.heading)
-    # Replace -- with em-dash for display.
-    text = text.replace("-- ", "\u2014 ")
+    text = text.replace("--", "\u2014")
     return text or "Untitled"
 
 
 def _plain_heading_inline(heading: list[Any]) -> str:
     """Extract plain-text from an InlineContent list for group headings."""
     text = _heading_plain_text(heading)
-    text = text.replace("-- ", "\u2014 ")
+    text = text.replace("--", "\u2014")
     return text or "Untitled"
 
 
-def write_epub(work: Work, output_path: str | Path) -> None:
-    """Write a Work to an EPUB 3 file.
+def _build_book(
+    work: Work, *, version_date: str = "",
+) -> tuple[epub.EpubBook, bytes]:
+    """Build an EpubBook from a Work, returning the book and cover PNG.
+
+    This is the shared core used by both :func:`write_epub` (which
+    writes to a file) and :func:`build_epub_bytes` (which returns
+    bytes in memory).
 
     Args:
-        work: The parsed and modelled work.
-        output_path: Filesystem path for the output .epub file.
+        work: The parsed Work to convert.
+        version_date: If given, shown on the colophon page.  Should be
+            omitted for probe builds (change detection) and included
+            for final builds (publication).
+
+    Returns:
+        A tuple of (book, cover_png_bytes).
     """
     book = epub.EpubBook()
 
@@ -113,7 +125,7 @@ def write_epub(work: Work, output_path: str | Path) -> None:
     front_pages.append(_make_front_page("title.xhtml", work.title, tp_xhtml))
 
     # Colophon.
-    co_xhtml = render_colophon(work)
+    co_xhtml = render_colophon(work, version_date=version_date)
     front_pages.append(_make_front_page("colophon.xhtml", "Colophon", co_xhtml))
 
     # -- Chapters ------------------------------------------------------------
@@ -222,6 +234,41 @@ def write_epub(work: Work, output_path: str | Path) -> None:
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
 
-    # -- Write ---------------------------------------------------------------
+    return book, cover_png
 
+
+def build_epub_bytes(
+    work: Work,
+    mtime: datetime | None = None,
+    version_date: str = "",
+) -> tuple[bytes, bytes]:
+    """Build an EPUB in memory and return (epub_bytes, cover_png_bytes).
+
+    This is used by :func:`~tei2epub.build_bundle` to produce a
+    :class:`~tei2epub.model.Bundle` without writing to disk.
+
+    Args:
+        work: The parsed work to convert.
+        mtime: If given, used as the ``dcterms:modified`` timestamp in
+            the EPUB OPF metadata.  Defaults to the current time.
+        version_date: If given, shown on the colophon page.  Should be
+            omitted for probe builds and included for final builds.
+    """
+    book, cover_png = _build_book(work, version_date=version_date)
+    buf = io.BytesIO()
+    options: dict[str, object] = {"epub3_pages": False}
+    if mtime is not None:
+        options["mtime"] = mtime
+    epub.write_epub(buf, book, options)
+    return buf.getvalue(), cover_png
+
+
+def write_epub(work: Work, output_path: str | Path) -> None:
+    """Write a Work to an EPUB 3 file.
+
+    Args:
+        work: The parsed and modelled work.
+        output_path: Filesystem path for the output .epub file.
+    """
+    book, _cover_png = _build_book(work)
     epub.write_epub(str(output_path), book, {"epub3_pages": False})

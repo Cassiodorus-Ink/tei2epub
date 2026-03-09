@@ -20,6 +20,7 @@ from tei2epub.model import (
     Foreign,
     Hi,
     InlineContent,
+    InlineNode,
     Note,
     PageBreak,
     Paragraph,
@@ -66,6 +67,54 @@ class _RenderContext:
 # Excludes dashes (en-dash, em-dash, hyphen).
 _NOTE_PUNCT = frozenset(".,;:?!)\u00bb\u201d\u2019")
 
+# Suffix that marks a noteref superscript in rendered HTML.
+_NOTEREF_SUFFIX = "</sup></a>"
+
+
+def _pull_punct(nodes: list[InlineNode], i: int) -> str:
+    """Pull leading punctuation from the node after index *i*.
+
+    If ``nodes[i+1]`` is a text node whose content (after stripping
+    leading whitespace) starts with punctuation characters from
+    :data:`_NOTE_PUNCT`, those characters are removed from the node
+    and returned.  Otherwise returns ``""``.
+
+    This is used to move punctuation before a footnote superscript so
+    that e.g. ``word<sup>1</sup>,`` becomes ``word,<sup>1</sup>``.
+    """
+    if i + 1 >= len(nodes):
+        return ""
+    nxt = nodes[i + 1]
+    if not isinstance(nxt, str):
+        return ""
+    # Strip leading whitespace so e.g. "\n," is recognised.
+    nxt_stripped = nxt.lstrip()
+    if not nxt_stripped or nxt_stripped[0] not in _NOTE_PUNCT:
+        return ""
+    j = 0
+    while j < len(nxt_stripped) and nxt_stripped[j] in _NOTE_PUNCT:
+        j += 1
+    pulled = nxt_stripped[:j]
+    nodes[i + 1] = nxt_stripped[j:]
+    return pulled
+
+
+def _ends_with_noteref(html: str) -> bool:
+    """True if *html* ends with a noteref superscript.
+
+    Also matches when the noteref is followed by closing container
+    tags like ``</em>`` or ``</span>``, since the noteref is still
+    the last meaningful inline content.
+    """
+    # Strip closing container tags to expose the noteref.
+    s = html
+    while s.endswith("</em>") or s.endswith("</span>"):
+        if s.endswith("</em>"):
+            s = s[:-len("</em>")]
+        elif s.endswith("</span>"):
+            s = s[:-len("</span>")]
+    return s.endswith(_NOTEREF_SUFFIX)
+
 
 def _render_inline(nodes: InlineContent, ctx: _RenderContext) -> str:
     """Render a list of inline nodes to an HTML string.
@@ -74,6 +123,10 @@ def _render_inline(nodes: InlineContent, ctx: _RenderContext) -> str:
     (other than a dash), the punctuation is moved before the
     superscript so that e.g. ``word.^1`` renders as ``word.¹`` rather
     than ``word¹.``.
+
+    This also works when the Note is the last child of a container
+    node (``<hi>``, ``<foreign>``, etc.) — the punctuation after the
+    closing tag is still pulled before the superscript.
     """
     parts: list[str] = []
     # Copy so we can safely mutate when swapping punctuation past notes.
@@ -84,9 +137,18 @@ def _render_inline(nodes: InlineContent, ctx: _RenderContext) -> str:
     while i < len(nodes):
         node = nodes[i]
         if isinstance(node, str):
-            parts.append(escape(node))
+            parts.append(escape(node.replace("--", "\u2014")))
         elif isinstance(node, Hi):
             inner = _render_inline(node.content, ctx)
+            # Strip trailing whitespace (often XML indentation between
+            # </note> and </hi>) so we can detect a trailing noteref.
+            inner_stripped = inner.rstrip()
+            if _ends_with_noteref(inner_stripped):
+                pulled = _pull_punct(nodes, i)
+                # Insert pulled punctuation before the noteref inside
+                # the <em> tag: ...punct<a ...>...</a></em>
+                insert_pos = inner_stripped.rfind("<a ")
+                inner = inner_stripped[:insert_pos] + escape(pulled) + inner_stripped[insert_pos:]
             parts.append(f"<em>{inner}</em>")
         elif isinstance(node, Note):
             # Strip trailing whitespace from the preceding part so
@@ -96,17 +158,7 @@ def _render_inline(nodes: InlineContent, ctx: _RenderContext) -> str:
 
             # Look ahead: if the next node is a string starting with
             # punctuation, pull that punctuation before the superscript.
-            pulled = ""
-            if i + 1 < len(nodes):
-                nxt = nodes[i + 1]
-                if isinstance(nxt, str) and nxt and nxt[0] in _NOTE_PUNCT:
-                    # Pull the leading run of punctuation characters.
-                    j = 0
-                    while j < len(nxt) and nxt[j] in _NOTE_PUNCT:
-                        j += 1
-                    pulled = nxt[:j]
-                    # Replace the next node with the remainder.
-                    nodes[i + 1] = nxt[j:]
+            pulled = _pull_punct(nodes, i)
 
             parts.append(escape(pulled))
             note_id = ctx.add_note(node.text)
@@ -124,6 +176,11 @@ def _render_inline(nodes: InlineContent, ctx: _RenderContext) -> str:
             )
         elif isinstance(node, Foreign):
             inner = _render_inline(node.content, ctx)
+            inner_stripped = inner.rstrip()
+            if _ends_with_noteref(inner_stripped):
+                pulled = _pull_punct(nodes, i)
+                insert_pos = inner_stripped.rfind("<a ")
+                inner = inner_stripped[:insert_pos] + escape(pulled) + inner_stripped[insert_pos:]
             lang_attr = f' lang="{escape(node.lang)}"' if node.lang else ""
             parts.append(f'<span class="foreign"{lang_attr}>{inner}</span>')
         elif isinstance(node, VerseLine):
@@ -188,6 +245,28 @@ def _render_paragraph(
     def _is_ws(node: object) -> bool:
         return isinstance(node, str) and not node.strip()
 
+    def _extract_leading_note(container: Hi | Foreign) -> Note | None:
+        """If *container* starts with optional whitespace then a Note,
+        remove and return that Note (mutating the container's content).
+        Returns None if the container doesn't start with a Note.
+        """
+        children = container.content
+        # Skip leading whitespace-only strings.
+        k = 0
+        while k < len(children):
+            child = children[k]
+            if isinstance(child, str) and not child.strip():
+                k += 1
+            else:
+                break
+        if k < len(children) and isinstance(children[k], Note):
+            note = children[k]
+            assert isinstance(note, Note)
+            # Remove leading whitespace + the Note from the container.
+            container.content = children[k + 1:]
+            return note
+        return None
+
     def _flush_verse(after_idx: int) -> int:
         """Flush the verse buffer and return how many nodes were consumed.
 
@@ -196,6 +275,11 @@ def _render_paragraph(
         are rendered inside the last verse line so the superscript
         appears inline with the verse text rather than on a new line
         after the display:block verse-group span.
+
+        Also handles the case where a Note is the first child of a
+        container node (Hi/Foreign) that follows the verse — the Note
+        is extracted from the container and absorbed into the verse
+        line, while the container keeps its remaining content.
 
         Returns the number of additional nodes consumed (so the caller
         can skip them).
@@ -222,6 +306,18 @@ def _render_paragraph(
                 # Stop after absorbing the note (and any preceding
                 # whitespace).  Further notes would need their own
                 # whitespace+note pair.
+                break
+            elif isinstance(n, (Hi, Foreign)):
+                # Check if the container starts with a Note — if so,
+                # extract it for the verse line without consuming the
+                # container itself.
+                note = _extract_leading_note(n)
+                if note is not None:
+                    trailing.append(note)
+                    break
+                # Container doesn't start with a Note; stop.
+                trailing = [t for t in trailing if isinstance(t, Note)]
+                consumed = len(trailing)
                 break
             else:
                 # Next real node is not a Note; don't consume the
@@ -270,7 +366,19 @@ def _render_paragraph(
             skip = _flush_verse(idx)
             idx += skip
             if idx < len(nodes):
-                parts.append(_render_inline([nodes[idx]], ctx))
+                rendered = _render_inline([nodes[idx]], ctx)
+                # If the rendered node ends with a noteref (e.g. a
+                # bare Note, or Hi/Foreign containing a trailing
+                # Note), pull punctuation from the next node in the
+                # paragraph — the one-at-a-time rendering can't do
+                # this lookahead itself.
+                if _ends_with_noteref(rendered.rstrip()):
+                    pulled = _pull_punct(nodes, idx)
+                    if pulled:
+                        r = rendered.rstrip()
+                        pos = r.rfind("<a ")
+                        rendered = r[:pos] + escape(pulled) + r[pos:]
+                parts.append(rendered)
                 idx += 1
 
     _flush_verse(len(nodes))
@@ -329,7 +437,7 @@ def _render_verse_block(
                 )
 
     if extracted_number:
-        parts.append(f"<h3>{escape(extracted_number)}</h3>\n")
+        parts.append(f'<h3>{escape(extracted_number.replace("--", "\u2014"))}</h3>\n')
 
     parts.append('<blockquote class="verse">\n')
     for li, line in enumerate(lines):
@@ -352,7 +460,7 @@ def _render_section(section: Section, ctx: _RenderContext) -> str:
     parts.append("<section>\n")
 
     if section.number:
-        parts.append(f"<h3>{escape(section.number)}</h3>\n")
+        parts.append(f'<h3>{escape(section.number.replace("--", "\u2014"))}</h3>\n')
 
     blocks = section.blocks
     bi = 0
@@ -664,11 +772,16 @@ def render_title_page(work: Work) -> str:
     return "".join(parts)
 
 
-def render_colophon(work: Work) -> str:
+def render_colophon(work: Work, *, version_date: str = "") -> str:
     """Render the colophon (credits) page as an XHTML document.
 
     Acknowledges the source (Corpus Corporum) and the EPUB conversion
-    tool (Cassiodorus).
+    tool (Cassiodorus).  If *version_date* is given (a ``YYYY-MM-DD``
+    string), it is shown as the edition date.
+
+    The version_date should be **omitted** in probe builds (used for
+    hash-based change detection) and **included** in final builds
+    (written to disk for publication).  See ``siteman/doc/versioning.md``.
     """
     parts: list[str] = []
     parts.append(XHTML_PREAMBLE.format(title="Colophon"))
@@ -694,6 +807,10 @@ def render_colophon(work: Work) -> str:
     parts.append(
         '<p><em>cassiodorus.ink</em></p>\n'
     )
+
+    if version_date:
+        parts.append('<p class="co-sep">\u2014</p>\n')
+        parts.append(f'<p class="co-date">Edition: {escape(version_date)}</p>\n')
 
     parts.append("</div>\n")
     parts.append(XHTML_POSTAMBLE)

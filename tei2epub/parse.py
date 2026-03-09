@@ -364,11 +364,14 @@ def _parse_metadata(header: etree._Element) -> dict[str, str]:
         author_elem = title_stmt.find(_ns("author"))
         if author_elem is not None:
             # Author text may include a <date> child; extract just the
-            # name portion.
+            # name portion, and capture the dates separately.
             parts = []
             if author_elem.text:
                 parts.append(author_elem.text.strip())
             meta["author"] = " ".join(parts) or _text_of(author_elem)
+            date_elem = author_elem.find(_ns("date"))
+            if date_elem is not None:
+                meta["author_dates"] = _text_of(date_elem)
 
     edition_stmt = file_desc.find(_ns("editionStmt"))
     if edition_stmt is not None:
@@ -424,6 +427,7 @@ def parse(tei_path: str | Path) -> Work:
     work = Work(
         title=meta.get("title", ""),
         author=meta.get("author", ""),
+        author_dates=meta.get("author_dates", ""),
         editor=meta.get("editor", ""),
         publisher=meta.get("publisher", ""),
         pub_place=meta.get("pub_place", ""),

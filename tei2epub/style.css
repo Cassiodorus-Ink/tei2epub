@@ -230,3 +230,8 @@ blockquote.verse p.verse-indent {
     color: #999;
     letter-spacing: 0.3em;
 }
+
+.co-date {
+    font-variant: tabular-nums;
+    color: #666;
+}
