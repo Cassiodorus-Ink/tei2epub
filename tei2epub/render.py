@@ -373,6 +373,11 @@ def _render_paragraph(
                 # paragraph — the one-at-a-time rendering can't do
                 # this lookahead itself.
                 if _ends_with_noteref(rendered.rstrip()):
+                    # Strip trailing whitespace from the preceding
+                    # rendered content, mirroring what _render_inline
+                    # does when it encounters a Note inline.
+                    if parts:
+                        parts[-1] = parts[-1].rstrip()
                     pulled = _pull_punct(nodes, idx)
                     if pulled:
                         r = rendered.rstrip()

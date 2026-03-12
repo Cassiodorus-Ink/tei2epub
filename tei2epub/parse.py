@@ -51,6 +51,40 @@ def _norm_ws(text: str | None) -> str:
     return _WS_RE.sub(" ", text)
 
 
+# -- Author normalisation ----------------------------------------------------
+
+_AUCTOR_RE = re.compile(r"Auctor incertus \((.+?)\)")
+
+
+def _normalise_author(author: str) -> str:
+    """Collapse repeated 'Auctor incertus' attributions into one.
+
+    Transforms e.g.
+        'Auctor incertus (Foo?); Auctor incertus (Bar?)'
+    into
+        'Auctor incertus (Foo? / Bar?)'
+
+    Bare 'Auctor incertus' entries with no parenthesised attribution
+    are dropped before collapsing (e.g. 'Auctor incertus (Foo?);
+    Auctor incertus' becomes 'Auctor incertus (Foo?)').
+
+    If not all remaining parts are 'Auctor incertus (…)' entries,
+    the string is returned unchanged.
+    """
+    parts = [p.strip() for p in author.split(";")]
+    # Drop bare "Auctor incertus" entries (no parenthesised name).
+    parts = [p for p in parts if p != "Auctor incertus"]
+    if len(parts) <= 1:
+        return parts[0] if parts else author
+    names: list[str] = []
+    for part in parts:
+        m = _AUCTOR_RE.fullmatch(part)
+        if m is None:
+            return author
+        names.append(m.group(1))
+    return "Auctor incertus (" + " / ".join(names) + ")"
+
+
 # -- Inline content parsing --------------------------------------------------
 
 def _parse_inline(elem: etree._Element) -> InlineContent:
@@ -99,6 +133,11 @@ def _parse_inline(elem: etree._Element) -> InlineContent:
         elif tag == "foreign":
             lang = child.get(f"{{{XML_NS}}}lang", "")
             result.append(Foreign(content=_parse_inline(child), lang=lang))
+        elif tag == "emph":
+            inner = _norm_ws(child.text or "")
+            if inner and not inner.strip().isdigit():
+                result.append(Hi(content=[inner]))
+            # digit-only emph (inline edition page refs) → drop
         else:
             # Unknown inline element: flatten its text content.
             inner = _norm_ws(child.text)
@@ -368,7 +407,9 @@ def _parse_metadata(header: etree._Element) -> dict[str, str]:
             parts = []
             if author_elem.text:
                 parts.append(author_elem.text.strip())
-            meta["author"] = " ".join(parts) or _text_of(author_elem)
+            meta["author"] = _normalise_author(
+                " ".join(parts) or _text_of(author_elem)
+            )
             date_elem = author_elem.find(_ns("date"))
             if date_elem is not None:
                 meta["author_dates"] = _text_of(date_elem)
@@ -445,7 +486,41 @@ def parse(tei_path: str | Path) -> Work:
 
     all_div1s = body.findall(_ns("div1"))
     if not all_div1s:
-        raise ValueError("TEI file has no <div1> element under <body>")
+        # Some texts skip div1 and have div2 directly under body.
+        # Treat body as if it were a single div1 (simple/flat work).
+        all_div2s = body.findall(_ns("div2"))
+        if all_div2s:
+            _parse_simple_work(work, body)
+            return work
+
+        # Some texts have div3 directly under body (no div1/div2).
+        all_div3s = body.findall(_ns("div3"))
+        if all_div3s:
+            _parse_flat_work(work, body)
+            return work
+
+        # CC "Admonitio" pattern: a <note> child of body wraps the
+        # structural content (div1/div2/div3).  The <note> contains
+        # the Migne editor's introductory note followed by the actual
+        # divs.  Extract the content and continue parsing normally.
+        for note in body:
+            if etree.QName(note.tag).localname != "note":
+                continue
+            inner_div1s = note.findall(_ns("div1"))
+            if inner_div1s:
+                all_div1s = inner_div1s
+                break
+            inner_div2s = note.findall(_ns("div2"))
+            if inner_div2s:
+                _parse_simple_work(work, note)
+                return work
+            inner_div3s = note.findall(_ns("div3"))
+            if inner_div3s:
+                _parse_flat_work(work, note)
+                return work
+
+        if not all_div1s:
+            raise ValueError("TEI file has no <div1> element under <body>")
 
     div1 = all_div1s[0]
 
