@@ -134,10 +134,10 @@ def _parse_inline(elem: etree._Element) -> InlineContent:
             lang = child.get(f"{{{XML_NS}}}lang", "")
             result.append(Foreign(content=_parse_inline(child), lang=lang))
         elif tag == "emph":
-            inner = _norm_ws(child.text or "")
-            if inner and not inner.strip().isdigit():
-                result.append(Hi(content=[inner]))
-            # digit-only emph (inline edition page refs) → drop
+            inner = _parse_inline(child)
+            # Drop digit-only emph (inline edition page refs).
+            if not (len(inner) == 1 and isinstance(inner[0], str) and inner[0].strip().isdigit()):
+                result.append(Hi(content=inner))
         else:
             # Unknown inline element: flatten its text content.
             inner = _norm_ws(child.text)
@@ -566,15 +566,20 @@ def parse(tei_path: str | Path) -> Work:
     return work
 
 
-def _parse_simple_work(work: Work, div1: etree._Element) -> None:
-    """Parse a simple work with <div1>/<div2>/<div3> structure."""
-    # Work-level heading.
-    div1_head = div1.find(_ns("head"))
-    work_title_heading: InlineContent = []
-    if div1_head is not None:
-        work_title_heading = _parse_inline(div1_head)
-        if not work.title:
-            work.title = _text_of(div1_head)
+def _parse_book(
+    div1: etree._Element,
+) -> tuple[InlineContent, Chapter | None, list[Chapter]]:
+    """Parse a single book (a ``<div1>`` with ``<div2>`` children).
+
+    Returns ``(heading, preamble, chapters)`` where *heading* is the
+    inline content of the ``<div1>/<head>``, *preamble* is any text
+    before the first ``<div2>`` (or ``None``), and *chapters* is the
+    list of chapters parsed from ``<div2>`` children.
+    """
+    head = div1.find(_ns("head"))
+    heading: InlineContent = []
+    if head is not None:
+        heading = _parse_inline(head)
 
     # Preamble: any <p>/<pb> elements before the first <div2>.
     preamble_blocks: list[Block] = []
@@ -587,17 +592,33 @@ def _parse_simple_work(work: Work, div1: etree._Element) -> None:
         elif tag == "pb":
             preamble_blocks.append(PageBreak(n=child.get("n", "")))
 
+    preamble: Chapter | None = None
     if preamble_blocks:
-        work.preamble = Chapter(
-            heading=work_title_heading,
+        preamble = Chapter(
+            heading=heading,
             sections=[Section(number="", blocks=preamble_blocks)],
         )
 
-    # Chapters: each <div2>.
-    work.chapters = [
+    chapters = [
         _parse_chapter_from_div(div2)
         for div2 in div1.findall(_ns("div2"))
     ]
+
+    return heading, preamble, chapters
+
+
+def _parse_simple_work(work: Work, div1: etree._Element) -> None:
+    """Parse a simple work with <div1>/<div2>/<div3> structure."""
+    heading, preamble, chapters = _parse_book(div1)
+
+    # Set work title from the div1 heading if not already set.
+    if heading and not work.title:
+        div1_head = div1.find(_ns("head"))
+        if div1_head is not None:
+            work.title = _text_of(div1_head)
+
+    work.preamble = preamble
+    work.chapters = chapters
 
 
 def _parse_flat_work(work: Work, div1: etree._Element) -> None:
@@ -630,20 +651,13 @@ def _parse_multi_book(
             )
 
     for div1 in div1s:
-        head = div1.find(_ns("head"))
-        heading: InlineContent = []
-        if head is not None:
-            heading = _parse_inline(head)
-
-        chapters = [
-            _parse_chapter_from_div(div2)
-            for div2 in div1.findall(_ns("div2"))
-        ]
+        heading, preamble, chapters = _parse_book(div1)
 
         if chapters:
             work.chapters.append(ChapterGroup(
                 heading=heading,
                 chapters=chapters,
+                preamble=preamble,
             ))
         else:
             # A <div1> with no <div2> children: treat it as a

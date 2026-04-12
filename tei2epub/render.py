@@ -676,7 +676,7 @@ def render_cover_png(work: Work) -> bytes:
     text_width = _COV_W - 2 * margin
 
     # Fonts — sized for thumbnail legibility.
-    title_font = ImageFont.truetype(_FONT_BOLD, 60)
+    title_font = ImageFont.truetype(_FONT_BOLD, 55)
     author_font = ImageFont.truetype(_FONT_ROMAN, 35)
     series_font = ImageFont.truetype(_FONT_ITALIC, 24)
     imprint_font = ImageFont.truetype(_FONT_ROMAN, 20)

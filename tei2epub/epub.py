@@ -199,10 +199,16 @@ def _build_book(
     # Body chapters.
     for item in work.chapters:
         if isinstance(item, ChapterGroup):
-            # Title page for the group (in the spine, but not as a
-            # separate TOC child — the parent Section links to it).
-            _, grp_file = _add_group_title(item.heading)
             group_links: list[epub.Link] = []
+            if item.preamble is not None:
+                # The preamble serves as the group's entry point,
+                # replacing the standalone title page.
+                _, preamble_link = _add_chapter(item.preamble)
+                grp_file = preamble_link.href
+            else:
+                # Title page for the group (in the spine, but not as a
+                # separate TOC child — the parent Section links to it).
+                _, grp_file = _add_group_title(item.heading)
             for chapter in item.chapters:
                 _, link = _add_chapter(chapter)
                 group_links.append(link)

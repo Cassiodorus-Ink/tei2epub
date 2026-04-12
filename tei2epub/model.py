@@ -130,9 +130,14 @@ class ChapterGroup:
 
     Corresponds to a non-leaf <div1> that contains further <div1>
     children.  Used to build hierarchical TOC entries in the EPUB.
+
+    An optional ``preamble`` holds introductory text that belongs to the
+    group but precedes its first chapter (e.g. a book-level prologue in
+    a multi-book work).
     """
     heading: InlineContent = field(default_factory=list)
     chapters: list[Chapter] = field(default_factory=list)
+    preamble: Chapter | None = None
 
 
 # A top-level content item is either a standalone Chapter or a

@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import sys
 import time
 from pathlib import Path
@@ -89,6 +90,12 @@ def main(argv: list[str] | None = None) -> None:
         dest="list_only",
         help="List files that would be built, without building.",
     )
+    parser.add_argument(
+        "--workers", "-j",
+        type=int,
+        default=4,
+        help="Number of parallel workers (default: 4).",
+    )
     args = parser.parse_args(argv)
 
     input_dir = args.input_dir.resolve()
@@ -124,7 +131,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"All {len(pairs)} file(s) up to date.")
         return
 
-    print(f"Building {len(to_build)} of {len(pairs)} file(s)...\n")
+    print(f"Building {len(to_build)} of {len(pairs)} file(s) "
+          f"({args.workers} worker(s))...\n")
 
     # Import here so --list and --help are fast even without deps.
     from tei2epub import convert
@@ -132,24 +140,36 @@ def main(argv: list[str] | None = None) -> None:
     built = 0
     failed = 0
 
-    for xml_path, epub_path in to_build:
+    def _build_one(xml_path: Path, epub_path: Path) -> tuple[str, str | None]:
+        """Build one EPUB; return (summary_line, error_or_None)."""
         rel_in = xml_path.relative_to(input_dir)
         rel_out = epub_path.relative_to(output_dir)
-        print(f"  {rel_in}")
-        print(f"    -> {rel_out}", end="", flush=True)
         t0 = time.monotonic()
         try:
             epub_path.parent.mkdir(parents=True, exist_ok=True)
             convert(xml_path, epub_path)
             elapsed = time.monotonic() - t0
             size_kb = epub_path.stat().st_size / 1024
-            print(f"  ({elapsed:.1f}s, {size_kb:.0f} KB)")
-            built += 1
+            line = f"  {rel_in}\n    -> {rel_out}  ({elapsed:.1f}s, {size_kb:.0f} KB)"
+            return line, None
         except Exception as exc:
             elapsed = time.monotonic() - t0
-            print(f"  FAILED ({elapsed:.1f}s)")
-            print(f"    {exc}", file=sys.stderr)
-            failed += 1
+            line = f"  {rel_in}\n    -> {rel_out}  FAILED ({elapsed:.1f}s)"
+            return line, str(exc)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {
+            pool.submit(_build_one, xml, epub): (xml, epub)
+            for xml, epub in to_build
+        }
+        for fut in concurrent.futures.as_completed(futures):
+            line, err = fut.result()
+            print(line, flush=True)
+            if err:
+                print(f"    {err}", file=sys.stderr)
+                failed += 1
+            else:
+                built += 1
 
     print(f"\nDone: {built} built, {failed} failed.")
     if failed:
