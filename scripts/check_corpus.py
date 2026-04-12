@@ -27,6 +27,13 @@ Anti-patterns checked (see corpus/anti-patterns.md for full descriptions):
     tei2epub in April 2026 and is no longer a runtime text-loss issue.
     It is not checked here but may be worth auditing for corpus cleanliness.
 
+    The following corpus-specific encodings are now handled by tei2epub
+    and are therefore excluded from TL-7 findings:
+      <P>     treated as <p> (uppercase encoding error)
+      <B>     dropped as edition page reference (like digit-only <emph>)
+      <b>     treated as <hi>
+      <LACUNA> rendered as [...] (empty) or [text] (with content)
+
   Structural (--structure):
     Not yet implemented (see skeleton below).
 """
@@ -48,13 +55,19 @@ _SCRIPT_DIR     = Path(__file__).resolve().parent
 _DEFAULT_CORPUS = _SCRIPT_DIR / ".." / ".." / "corpus" / "xml"
 
 # Tags that _parse_blocks accepts at block level inside <div2>.
-_KNOWN_DIV2_CHILDREN = frozenset({"head", "pb", "p", "l", "lg", "div3"})
+# "P" is an uppercase encoding error treated as <p> by tei2epub.
+_KNOWN_DIV2_CHILDREN = frozenset({"head", "pb", "p", "P", "l", "lg", "div3"})
 
 # Tags that _parse_blocks accepts at block level inside <div3>.
-_KNOWN_DIV3_CHILDREN = frozenset({"head", "pb", "p", "l", "lg"})
+_KNOWN_DIV3_CHILDREN = frozenset({"head", "pb", "p", "P", "l", "lg"})
 
 # Tags that _parse_inline accepts as inline elements.
-_KNOWN_INLINE_TAGS = frozenset({"hi", "emph", "note", "pb", "foreign", "l", "lg"})
+# "B" (dropped as edition page ref), "b" (→ <hi>), and "LACUNA" (→ [...])
+# are corpus-specific encodings handled by tei2epub.
+_KNOWN_INLINE_TAGS = frozenset({
+    "hi", "emph", "note", "pb", "foreign", "l", "lg",
+    "B", "b", "LACUNA",
+})
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

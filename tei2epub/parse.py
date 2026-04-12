@@ -109,7 +109,8 @@ def _parse_inline(elem: etree._Element) -> InlineContent:
     for child in elem:
         tag = etree.QName(child.tag).localname
 
-        if tag == "hi":
+        if tag in ("hi", "b"):
+            # <b> is an HTML bold used in some corpus files; treat as <hi>.
             result.append(Hi(content=_parse_inline(child)))
         elif tag == "note":
             note_text = _norm_ws(_text_of(child))
@@ -138,6 +139,15 @@ def _parse_inline(elem: etree._Element) -> InlineContent:
             # Drop digit-only emph (inline edition page refs).
             if not (len(inner) == 1 and isinstance(inner[0], str) and inner[0].strip().isdigit()):
                 result.append(Hi(content=inner))
+        elif tag == "B":
+            # Uppercase <B> encodes edition page references (like digit-only
+            # <emph>); drop entirely.
+            pass
+        elif tag == "LACUNA":
+            # Custom corpus element marking missing/illegible manuscript text.
+            # Empty → render as "[...]"; with text → render text in brackets.
+            inner_text = _norm_ws(_text_of(child)).strip()
+            result.append(f"[{inner_text}]" if inner_text else "[...]")
         else:
             # Unknown inline element: flatten its text content.
             inner = _norm_ws(child.text)
@@ -175,7 +185,9 @@ def _parse_blocks(container: etree._Element) -> list[Block]:
     for child in container:
         tag = etree.QName(child.tag).localname
 
-        if tag == "p":
+        if tag in ("p", "P"):
+            # <P> is an uppercase encoding error used in two corpus files;
+            # treat identically to <p>.
             _flush_verse()
             blocks.append(Paragraph(content=_parse_inline(child)))
         elif tag == "pb":
@@ -225,7 +237,7 @@ def _parse_blocks_before(
         tag = etree.QName(child.tag).localname
         if tag == stop_tag:
             break
-        if tag == "p":
+        if tag in ("p", "P"):
             _flush()
             blocks.append(Paragraph(content=_parse_inline(child)))
         elif tag == "pb":
@@ -326,7 +338,7 @@ def _parse_chapter_from_div(div: etree._Element) -> Chapter:
                     ))
             if lines:
                 initial_blocks.append(VerseBlock(lines=lines))
-        elif tag == "p":
+        elif tag in ("p", "P"):
             _flush_verse_lines()
             initial_blocks.append(Paragraph(content=_parse_inline(child)))
         elif tag == "pb":
@@ -587,7 +599,7 @@ def _parse_book(
         tag = etree.QName(child.tag).localname
         if tag == "div2":
             break
-        if tag == "p":
+        if tag in ("p", "P"):
             preamble_blocks.append(Paragraph(content=_parse_inline(child)))
         elif tag == "pb":
             preamble_blocks.append(PageBreak(n=child.get("n", "")))
