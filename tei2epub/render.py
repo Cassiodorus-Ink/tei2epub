@@ -540,15 +540,15 @@ def _render_notes(ctx: _RenderContext) -> str:
 
     parts: list[str] = []
     parts.append('<hr class="notes-sep"/>\n')
-    parts.append('<section epub:type="endnotes" role="doc-endnotes">\n')
+    parts.append('<section epub:type="footnotes" role="doc-footnotes">\n')
     for num, (note_id, note_text) in enumerate(ctx.notes, 1):
         ref_id = f"ref-{note_id}"
         display_text = _strip_parens(note_text)
         parts.append(
             f'<aside epub:type="footnote" id="{note_id}"'
             f' role="doc-footnote">\n'
-            f'<p><a href="#{ref_id}">'
-            f"{num}. {escape(display_text)}</a></p>\n"
+            f'<p><a href="#{ref_id}" role="doc-backlink">{num}.</a>'
+            f" {escape(display_text)}</p>\n"
             f"</aside>\n"
         )
     parts.append("</section>\n")
