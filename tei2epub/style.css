@@ -47,27 +47,24 @@ em {
     font-style: italic;
 }
 
-/* Migne column markers: displayed as marginal numbers.
-   float: right with negative margin pushes them into the
-   right margin area on e-readers that support it. */
+/* Migne column markers: inline superscript with bracketed number. */
 .pb {
-    float: right;
-    clear: right;
-    font-size: 0.65em;
+    display: inline;
+    vertical-align: super;
+    font-size: 0.6em;
     color: #999;
     font-style: normal;
     font-weight: normal;
-    margin-right: -2.5em;
-    margin-top: 0.2em;
     line-height: 1;
 }
+.pb::before { content: "["; }
+.pb::after  { content: "]"; }
 
 /* Block-level page break markers (between sections). */
 .pb-block {
     text-indent: 0;
     margin: 0;
     padding: 0;
-    line-height: 0.5;
 }
 
 /* Footnote reference superscripts. */
