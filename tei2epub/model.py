@@ -97,7 +97,27 @@ class VerseBlock:
     lines: list[VerseLine] = field(default_factory=list)
 
 
-Block: TypeAlias = Union[Paragraph, PageBreak, VerseBlock]
+@dataclass
+class TeiListItem:
+    """A single item in a TEI <list>, corresponding to <item>."""
+    content: InlineContent = field(default_factory=list)
+
+
+@dataclass
+class TeiList:
+    """A TEI <list> rendered as a block-level list.
+
+    A list with no ``head`` is rendered as a bare ``<ul>``; one with a
+    ``head`` gets a leading caption.  When a ``<list>`` appears inside
+    a ``<p>``, the parser splits the paragraph so the list sits
+    between two prose paragraphs (HTML ``<ul>`` cannot legally nest
+    inside ``<p>``).
+    """
+    items: list[TeiListItem] = field(default_factory=list)
+    head: InlineContent = field(default_factory=list)
+
+
+Block: TypeAlias = Union[Paragraph, PageBreak, VerseBlock, TeiList]
 
 
 # -- Structural nodes --------------------------------------------------------

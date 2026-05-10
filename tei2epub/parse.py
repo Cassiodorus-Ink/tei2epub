@@ -4,6 +4,33 @@ This module handles Corpus Corporum-style TEI files for the Patrologia
 Latina, which use TEI P4-era numbered div elements (<div1>, <div2>,
 <div3>) and contain body text with inline <hi>, <note>, and <pb/>
 elements.
+
+================================================================
+!! WHEN EXTENDING THIS PARSER, UPDATE THE CONFORMANCE CHECKER !!
+================================================================
+
+If you teach the parser a new tag, or extend an existing tag to be
+handled in a new parent context, you MUST also update the parser's
+allow-lists in ``tei2epub/coverage.py``.  Those allow-lists are the
+single source of truth used by the CV-1 conformance check
+(``tei2epub/checks/coverage.py``); they tell the checker which
+tag/parent combinations the parser actually handles.
+
+Forgetting this has two failure modes:
+
+  * If the parser starts handling a tag but coverage.py is not
+    updated, the corpus checker will keep flagging legitimate uses
+    as CV-1 findings — the report fills with false positives and
+    real defects get drowned out.
+
+  * If the parser DROPS support for a tag (or stops handling it in
+    some context) and coverage.py is not updated, the checker will
+    silently approve files that now produce broken output.
+
+If you add a fundamentally new *kind* of defect that the existing
+TL-/ST-/CV- checks won't catch, also add a new CheckSpec to
+``tei2epub/checks/catalog.py`` and a check function in the
+corresponding ``tei2epub/checks/`` module.
 """
 
 from __future__ import annotations
@@ -24,6 +51,8 @@ from tei2epub.model import (
     PageBreak,
     Paragraph,
     Section,
+    TeiList,
+    TeiListItem,
     TopLevelItem,
     VerseBlock,
     VerseLine,
@@ -87,6 +116,61 @@ def _normalise_author(author: str) -> str:
 
 # -- Inline content parsing --------------------------------------------------
 
+def _inline_from_child(child: etree._Element) -> InlineContent:
+    """Convert a single inline child element into InlineContent nodes.
+
+    Does not include the child's tail text; callers append that
+    separately.  Returns an empty list for elements that are dropped
+    (e.g. ``<B>`` edition refs, digit-only ``<emph>``).
+    """
+    tag = etree.QName(child.tag).localname
+
+    if tag in ("hi", "b", "i"):
+        # <b> and <i> are HTML bold/italic that leak into some corpus files;
+        # both are treated as <hi> (rendered as <em>/italic).
+        return [Hi(content=_parse_inline(child))]
+    if tag == "note":
+        note_text = _norm_ws(_text_of(child))
+        return [Note(text=note_text)] if note_text else []
+    if tag == "pb":
+        return [PageBreak(n=child.get("n", ""))]
+    if tag == "l":
+        indent = child.get("rend", "") == "indent"
+        return [VerseLine(content=_parse_inline(child), indent=indent)]
+    if tag == "lg":
+        # <lg> inside a <p>: parse each <l> child as inline verse.
+        result: InlineContent = []
+        for lchild in child:
+            ltag = etree.QName(lchild.tag).localname
+            if ltag == "l":
+                lg_indent = lchild.get("rend", "") == "indent"
+                result.append(VerseLine(
+                    content=_parse_inline(lchild), indent=lg_indent,
+                ))
+        return result
+    if tag == "foreign":
+        lang = child.get(f"{{{XML_NS}}}lang", "")
+        return [Foreign(content=_parse_inline(child), lang=lang)]
+    if tag == "emph":
+        inner = _parse_inline(child)
+        # Drop digit-only emph (inline edition page refs).
+        if len(inner) == 1 and isinstance(inner[0], str) and inner[0].strip().isdigit():
+            return []
+        return [Hi(content=inner)]
+    if tag == "B":
+        # Uppercase <B> encodes edition page references (like digit-only
+        # <emph>); drop entirely.
+        return []
+    if tag == "LACUNA":
+        # Custom corpus element marking missing/illegible manuscript text.
+        # Empty → render as "[...]"; with text → render text in brackets.
+        inner_text = _norm_ws(_text_of(child)).strip()
+        return [f"[{inner_text}]" if inner_text else "[...]"]
+    # Unknown inline element: flatten its text content.
+    inner_text = _norm_ws(child.text)
+    return [inner_text] if inner_text else []
+
+
 def _parse_inline(elem: etree._Element) -> InlineContent:
     """Parse the mixed content of an element into a flat InlineContent list.
 
@@ -101,65 +185,78 @@ def _parse_inline(elem: etree._Element) -> InlineContent:
     """
     result: InlineContent = []
 
-    # Text before first child element.
     head_text = _norm_ws(elem.text)
     if head_text:
         result.append(head_text)
 
     for child in elem:
-        tag = etree.QName(child.tag).localname
-
-        if tag in ("hi", "b"):
-            # <b> is an HTML bold used in some corpus files; treat as <hi>.
-            result.append(Hi(content=_parse_inline(child)))
-        elif tag == "note":
-            note_text = _norm_ws(_text_of(child))
-            if note_text:
-                result.append(Note(text=note_text))
-        elif tag == "pb":
-            n = child.get("n", "")
-            result.append(PageBreak(n=n))
-        elif tag == "l":
-            indent = child.get("rend", "") == "indent"
-            result.append(VerseLine(content=_parse_inline(child), indent=indent))
-        elif tag == "lg":
-            # <lg> inside a <p>: parse each <l> child as inline verse.
-            for lchild in child:
-                ltag = etree.QName(lchild.tag).localname
-                if ltag == "l":
-                    lg_indent = lchild.get("rend", "") == "indent"
-                    result.append(VerseLine(
-                        content=_parse_inline(lchild), indent=lg_indent,
-                    ))
-        elif tag == "foreign":
-            lang = child.get(f"{{{XML_NS}}}lang", "")
-            result.append(Foreign(content=_parse_inline(child), lang=lang))
-        elif tag == "emph":
-            inner = _parse_inline(child)
-            # Drop digit-only emph (inline edition page refs).
-            if not (len(inner) == 1 and isinstance(inner[0], str) and inner[0].strip().isdigit()):
-                result.append(Hi(content=inner))
-        elif tag == "B":
-            # Uppercase <B> encodes edition page references (like digit-only
-            # <emph>); drop entirely.
-            pass
-        elif tag == "LACUNA":
-            # Custom corpus element marking missing/illegible manuscript text.
-            # Empty → render as "[...]"; with text → render text in brackets.
-            inner_text = _norm_ws(_text_of(child)).strip()
-            result.append(f"[{inner_text}]" if inner_text else "[...]")
-        else:
-            # Unknown inline element: flatten its text content.
-            inner = _norm_ws(child.text)
-            if inner:
-                result.append(inner)
-
-        # Tail text after this child element.
+        result.extend(_inline_from_child(child))
         tail = _norm_ws(child.tail)
         if tail:
             result.append(tail)
 
     return result
+
+
+# -- List parsing ------------------------------------------------------------
+
+def _parse_list(list_elem: etree._Element) -> TeiList:
+    """Parse a TEI <list> element into a TeiList block.
+
+    Recognises ``<head>`` (an optional caption) and ``<item>`` children;
+    other children are ignored.
+    """
+    head: InlineContent = []
+    items: list[TeiListItem] = []
+    for child in list_elem:
+        tag = etree.QName(child.tag).localname
+        if tag == "head":
+            head = _parse_inline(child)
+        elif tag == "item":
+            items.append(TeiListItem(content=_parse_inline(child)))
+    return TeiList(items=items, head=head)
+
+
+def _parse_p_to_blocks(p: etree._Element) -> list[Block]:
+    """Parse a <p> element into a sequence of blocks.
+
+    Most paragraphs return ``[Paragraph(...)]``.  When a ``<p>`` contains
+    one or more ``<list>`` children, the paragraph is split so each
+    list becomes a block-level sibling between two prose paragraphs —
+    HTML ``<ul>`` cannot legally nest inside ``<p>``.
+    """
+    if not any(etree.QName(c.tag).localname == "list" for c in p):
+        return [Paragraph(content=_parse_inline(p))]
+
+    blocks: list[Block] = []
+    current: InlineContent = []
+
+    def _flush() -> None:
+        if not current:
+            return
+        if all(isinstance(n, str) and not n.strip() for n in current):
+            current.clear()
+            return
+        blocks.append(Paragraph(content=list(current)))
+        current.clear()
+
+    head_text = _norm_ws(p.text)
+    if head_text:
+        current.append(head_text)
+
+    for child in p:
+        tag = etree.QName(child.tag).localname
+        if tag == "list":
+            _flush()
+            blocks.append(_parse_list(child))
+        else:
+            current.extend(_inline_from_child(child))
+        tail = _norm_ws(child.tail)
+        if tail:
+            current.append(tail)
+
+    _flush()
+    return blocks
 
 
 # -- Block-level parsing -----------------------------------------------------
@@ -189,7 +286,7 @@ def _parse_blocks(container: etree._Element) -> list[Block]:
             # <P> is an uppercase encoding error used in two corpus files;
             # treat identically to <p>.
             _flush_verse()
-            blocks.append(Paragraph(content=_parse_inline(child)))
+            blocks.extend(_parse_p_to_blocks(child))
         elif tag == "pb":
             _flush_verse()
             blocks.append(PageBreak(n=child.get("n", "")))
@@ -210,6 +307,9 @@ def _parse_blocks(container: etree._Element) -> list[Block]:
                     ))
             if lg_lines:
                 blocks.append(VerseBlock(lines=lg_lines))
+        elif tag == "list":
+            _flush_verse()
+            blocks.append(_parse_list(child))
         # <head> is handled separately by callers; skip it here.
 
     _flush_verse()
@@ -239,7 +339,7 @@ def _parse_blocks_before(
             break
         if tag in ("p", "P"):
             _flush()
-            blocks.append(Paragraph(content=_parse_inline(child)))
+            blocks.extend(_parse_p_to_blocks(child))
         elif tag == "pb":
             _flush()
             blocks.append(PageBreak(n=child.get("n", "")))
@@ -260,6 +360,9 @@ def _parse_blocks_before(
                     ))
             if lg_lines:
                 blocks.append(VerseBlock(lines=lg_lines))
+        elif tag == "list":
+            _flush()
+            blocks.append(_parse_list(child))
 
     _flush()
     return blocks
@@ -340,10 +443,13 @@ def _parse_chapter_from_div(div: etree._Element) -> Chapter:
                 initial_blocks.append(VerseBlock(lines=lines))
         elif tag in ("p", "P"):
             _flush_verse_lines()
-            initial_blocks.append(Paragraph(content=_parse_inline(child)))
+            initial_blocks.extend(_parse_p_to_blocks(child))
         elif tag == "pb":
             _flush_verse_lines()
             initial_blocks.append(PageBreak(n=child.get("n", "")))
+        elif tag == "list":
+            _flush_verse_lines()
+            initial_blocks.append(_parse_list(child))
 
     _flush_verse_lines()
     if initial_blocks:
@@ -496,6 +602,13 @@ def parse(tei_path: str | Path) -> Work:
     if body is None:
         raise ValueError("TEI file has no <body> element")
 
+    # Preamble from <front>, if present.  This is done centrally so
+    # that all structural paths (simple, flat, multi-book, collection)
+    # pick up the front matter.
+    front = root.find(f".//{_ns('front')}")
+    if front is not None:
+        work.preamble = _parse_front_preamble(front, work.title)
+
     all_div1s = body.findall(_ns("div1"))
     if not all_div1s:
         # Some texts skip div1 and have div2 directly under body.
@@ -593,16 +706,18 @@ def _parse_book(
     if head is not None:
         heading = _parse_inline(head)
 
-    # Preamble: any <p>/<pb> elements before the first <div2>.
+    # Preamble: any <p>/<pb>/<list> elements before the first <div2>.
     preamble_blocks: list[Block] = []
     for child in div1:
         tag = etree.QName(child.tag).localname
         if tag == "div2":
             break
         if tag in ("p", "P"):
-            preamble_blocks.append(Paragraph(content=_parse_inline(child)))
+            preamble_blocks.extend(_parse_p_to_blocks(child))
         elif tag == "pb":
             preamble_blocks.append(PageBreak(n=child.get("n", "")))
+        elif tag == "list":
+            preamble_blocks.append(_parse_list(child))
 
     preamble: Chapter | None = None
     if preamble_blocks:
@@ -638,6 +753,40 @@ def _parse_flat_work(work: Work, div1: etree._Element) -> None:
     work.chapters = [_parse_chapter_from_div(div1)]
 
 
+def _parse_front_preamble(front: etree._Element, work_title: str) -> Chapter | None:
+    """Parse a <front> element into a preamble Chapter.
+
+    The heading is taken from the first <head> found inside <front>
+    (whether directly or inside a div child).  Falls back to the work
+    title, then to "Preamble" if no heading is found.  Returns None if
+    the front contains no paragraph content.
+    """
+    heading_elem: etree._Element | None = None
+    for child in front:
+        tag = etree.QName(child.tag).localname
+        if tag in ("div1", "div2", "div3", "div"):
+            heading_elem = child.find(_ns("head"))
+            if heading_elem is not None:
+                break
+    if heading_elem is None:
+        heading_elem = front.find(_ns("head"))
+    heading: InlineContent = (
+        _parse_inline(heading_elem)
+        if heading_elem is not None
+        else ([work_title] if work_title else ["Preamble"])
+    )
+
+    front_blocks: list[Block] = []
+    for p in front.iter(_ns("p")):
+        front_blocks.extend(_parse_p_to_blocks(p))
+    if not front_blocks:
+        return None
+    return Chapter(
+        heading=heading,
+        sections=[Section(number="", blocks=front_blocks)],
+    )
+
+
 def _parse_multi_book(
     work: Work,
     root: etree._Element,
@@ -650,18 +799,6 @@ def _parse_multi_book(
     book.  Each book becomes a ChapterGroup whose chapters are the
     <div2> children of that <div1>.
     """
-    # Preamble from <front>, if present.
-    front = root.find(f".//{_ns('front')}")
-    if front is not None:
-        front_blocks: list[Block] = []
-        for p in front.iter(_ns("p")):
-            front_blocks.append(Paragraph(content=_parse_inline(p)))
-        if front_blocks:
-            work.preamble = Chapter(
-                heading=[work.title] if work.title else ["Preamble"],
-                sections=[Section(number="", blocks=front_blocks)],
-            )
-
     for div1 in div1s:
         heading, preamble, chapters = _parse_book(div1)
 
@@ -728,20 +865,7 @@ def _parse_collection(
     """Parse a collection (e.g. Epistolae) with nested <div1> elements.
 
     Grouping <div1> elements become ChapterGroups; leaf <div1> elements
-    become Chapters.  A <front> section, if present, becomes the
-    preamble.
+    become Chapters.
     """
-    # Preamble from <front>.
-    front = root.find(f".//{_ns('front')}")
-    if front is not None:
-        front_blocks: list[Block] = []
-        for p in front.iter(_ns("p")):
-            front_blocks.append(Paragraph(content=_parse_inline(p)))
-        if front_blocks:
-            work.preamble = Chapter(
-                heading=[work.title] if work.title else ["Preamble"],
-                sections=[Section(number="", blocks=front_blocks)],
-            )
-
     # Parse the body's <div1> children, preserving group hierarchy.
     work.chapters = _parse_div1_items(body)

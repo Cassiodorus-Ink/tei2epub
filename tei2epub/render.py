@@ -25,6 +25,7 @@ from tei2epub.model import (
     PageBreak,
     Paragraph,
     Section,
+    TeiList,
     VerseBlock,
     VerseLine,
     Work,
@@ -391,6 +392,25 @@ def _render_paragraph(
     return "".join(parts)
 
 
+def _render_list(tlist: TeiList, ctx: _RenderContext) -> str:
+    """Render a TeiList as an HTML <ul>.
+
+    If the list has a ``head`` it is emitted as a no-indent paragraph
+    above the list (TEI uses ``<head>`` for an inline caption rather
+    than a heading proper).
+    """
+    parts: list[str] = []
+    if tlist.head:
+        head_html = _render_inline(tlist.head, ctx)
+        parts.append(f'<p class="list-head no-indent">{head_html}</p>\n')
+    parts.append('<ul class="tei-list">\n')
+    for item in tlist.items:
+        inner = _render_inline(item.content, ctx)
+        parts.append(f"<li>{inner}</li>\n")
+    parts.append("</ul>\n")
+    return "".join(parts)
+
+
 def _render_page_break(pb: PageBreak) -> str:
     """Render a block-level page break as a standalone marker."""
     display = pb.display_n
@@ -484,6 +504,9 @@ def _render_section(section: Section, ctx: _RenderContext) -> str:
             parts.append(_render_page_break(block))
             # A page-break marker doesn't reset the verse flag — the
             # continuation paragraph still logically follows the verse.
+        elif isinstance(block, TeiList):
+            parts.append(_render_list(block, ctx))
+            prev_was_verse = False
         elif isinstance(block, VerseBlock):
             # Look ahead: if the next block is a Paragraph starting
             # with optional whitespace + Note, absorb that note into
