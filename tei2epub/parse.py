@@ -518,19 +518,25 @@ def _parse_metadata(header: etree._Element) -> dict[str, str]:
     title_stmt = file_desc.find(_ns("titleStmt"))
     if title_stmt is not None:
         meta["title"] = _text_of(title_stmt.find(_ns("title")))
-        author_elem = title_stmt.find(_ns("author"))
-        if author_elem is not None:
+        author_elems = title_stmt.findall(_ns("author"))
+        if author_elems:
             # Author text may include a <date> child; extract just the
-            # name portion, and capture the dates separately.
-            parts = []
-            if author_elem.text:
-                parts.append(author_elem.text.strip())
-            meta["author"] = _normalise_author(
-                " ".join(parts) or _text_of(author_elem)
-            )
-            date_elem = author_elem.find(_ns("date"))
-            if date_elem is not None:
-                meta["author_dates"] = _text_of(date_elem)
+            # name portion for each <author>, and capture the dates
+            # separately.  Join multiple authors with "; " so that
+            # _normalise_author can collapse multi-author attributions.
+            author_parts: list[str] = []
+            dates: list[str] = []
+            for ae in author_elems:
+                name = (ae.text or "").strip()
+                if not name:
+                    name = _text_of(ae)
+                author_parts.append(name)
+                date_elem = ae.find(_ns("date"))
+                if date_elem is not None:
+                    dates.append(_text_of(date_elem))
+            meta["author"] = _normalise_author("; ".join(author_parts))
+            if dates:
+                meta["author_dates"] = dates[0]
 
     edition_stmt = file_desc.find(_ns("editionStmt"))
     if edition_stmt is not None:
