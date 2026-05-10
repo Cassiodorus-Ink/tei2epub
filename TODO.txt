@@ -1,0 +1,113 @@
+# tei2epub TODO
+
+## Internal representation: <front> and editorial matter
+
+Consider adding an explicit internal-representation node for <front>
+content (and perhaps more generally for extended editorial comments).
+Currently <front> is normalised into a plain Chapter on the Work's
+``preamble`` field.  That is adequate for rendering, but it loses the
+semantic distinction between primary text and editorial preface.
+A dedicated ``FrontMatter`` or ``EditorialNote`` node would let the
+renderer choose different styling, and would make round-trip or
+structural analysis easier.
+
+## Internal representation: inline emphasis
+
+a. Should the internal model object be named `Emph` rather than `Hi`?
+   `Hi` mirrors the TEI element name, but the object represents
+   emphasis/italic in the output and the TEI source for that is `<hi>`,
+   `<emph>`, `<i>`, or `<b>` — "Hi" is a confusing name for someone
+   reading the model.  `Emph` (or `Italic`) would be clearer.
+
+b. Should `<b>` (HTML bold leak) produce a distinct `Bold` model node
+   rather than being silently collapsed into `Hi`/`Emph`?
+   Currently all four tags (`<hi>`, `<emph>`, `<b>`, `<i>`) map to the
+   same node and render as `<em>` (italic).  This means source-side bold
+   becomes italic in the EPUB, which is a semantic mismatch.  Options:
+   - Keep as-is (pragmatic: bold doesn't appear intentionally in these
+     texts, it's always a conversion artefact or scan noise).
+   - Add a `Bold` node rendered as `<strong>`, and route `<b>` there.
+   - Inspect `<hi rend="bold">` and route accordingly, treating bare
+     `<b>` as a scan artefact to drop or italicise.
+# tei2epub TODO
+
+## Internal representation: <front> and editorial matter
+
+Consider adding an explicit internal-representation node for <front>
+content (and perhaps more generally for extended editorial comments).
+Currently <front> is normalised into a plain Chapter on the Work's
+``preamble`` field.  That is adequate for rendering, but it loses the
+semantic distinction between primary text and editorial preface.
+A dedicated ``FrontMatter`` or ``EditorialNote`` node would let the
+renderer choose different styling, and would make round-trip or
+structural analysis easier.
+
+## Internal representation: inline emphasis
+
+a. Should the internal model object be named `Emph` rather than `Hi`?
+   `Hi` mirrors the TEI element name, but the object represents
+   emphasis/italic in the output and the TEI source for that is `<hi>`,
+   `<emph>`, `<i>`, or `<b>` — "Hi" is a confusing name for someone
+   reading the model.  `Emph` (or `Italic`) would be clearer.
+
+b. Should `<b>` (HTML bold leak) produce a distinct `Bold` model node
+   rather than being silently collapsed into `Hi`/`Emph`?
+   Currently all four tags (`<hi>`, `<emph>`, `<b>`, `<i>`) map to the
+   same node and render as `<em>` (italic).  This means source-side bold
+   becomes italic in the EPUB, which is a semantic mismatch.  Options:
+   - Keep as-is (pragmatic: bold doesn't appear intentionally in these
+     texts, it's always a conversion artefact or scan noise).
+   - Add a `Bold` node rendered as `<strong>`, and route `<b>` there.
+   - Inspect `<hi rend="bold">` and route accordingly, treating bare
+     `<b>` as a scan artefact to drop or italicise.
+
+## TL-7: <note> with block-level structural children (2026-05-03)
+
+New check added to the corpus checker.  Out of 296,162 <note> elements,
+114 files contain <note> with structural children (<div1>, <div2>,
+<div3>, <head>, <list>, <lg>).
+
+109 of those are the Admonitio pattern (<note> as direct child of
+<body> wrapping the whole work) and ARE handled by parse().
+
+8 files are flagged by TL-7 as genuinely problematic (structure will
+be flattened to plain text):
+
+  - alcuinus/100_Alcuinus_Enchiridion.xml
+    <div2> inside <note> inside <div1> — MONITUM PRAEVIUM
+    (This file also had the main <note>→<front> edit; there may be
+    additional nested <note> elements still to fix.)
+
+  - alcuinus/100_Alcuinus_In-Cantica-canticorum.xml
+    <div2> inside <note> inside <div1> — MONITUM PRAEVIUM
+
+  - alcuinus/100_Alcuinus_Interrogationes-et-responsiones-in-Genesin.xml
+    Two occurrences: <div2> inside <note> inside <div1> — MONITUM PRAEVIUM
+
+  - auctor-incertus-maximus-taurinensis/057_Auctor-incertus-(Maximus-
+    Taurinensis_)_-Auctor-incertus-(Hieronymus-Stridonensis_)_Epistolae.xml
+    Two occurrences: <div1> inside <note> inside <div1> — ADMONITIO
+
+  - boetius/063_Boetius_De-consolatione-philosophiae.xml
+    <div2> inside <note>
+
+  - sidonius-apollinaris/058_Sidonius-Apollinaris_Epistolae.xml
+    <div2> inside <note>
+
+  - willelmus-malmesburiensis/179_Willelmus-Malmesburiensis_De-gestis-
+    pontificum-Anglorum.xml
+    <div2> inside <note>
+
+Additionally, auctor-incertus-tertullianus/002_Auctor-incertus-
+(Tertullianus_)_Adversus-Marcionem.xml has 5 <note> elements containing
+<head> inside inline contexts (inside <head> or <l> elements).  These
+are editorial footnotes with bold headings; the text survives but the
+heading semantics are lost.
+
+Remediation: editorial prefaces inside <note> should be converted to
+<front> (if at the work level) or to ordinary <div1>/<div2> structure
+(if inline within the text).  Run::
+
+    poetry run python scripts/check_corpus.py --text-loss --report tl7.txt
+
+to regenerate the full TL-7 report.
