@@ -158,6 +158,9 @@ class ChapterGroup:
     heading: InlineContent = field(default_factory=list)
     chapters: list[Chapter] = field(default_factory=list)
     preamble: Chapter | None = None
+    # Back matter at the group level (e.g. appendix after the last
+    # chapter of a book).  Currently flattened to a single Chapter.
+    back_matter: Chapter | None = None
 
 
 # A top-level content item is either a standalone Chapter or a
@@ -188,6 +191,9 @@ class Work:
     source_desc: str = ""
     language: str = "la"
     preamble: Chapter | None = None
+    # Back matter (e.g. index, appendix) parsed from <back>.
+    # Currently flattened to a single Chapter.
+    back_matter: Chapter | None = None
     chapters: list[TopLevelItem] = field(default_factory=list)
 
 

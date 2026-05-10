@@ -615,6 +615,12 @@ def parse(tei_path: str | Path) -> Work:
     if front is not None:
         work.preamble = _parse_front_preamble(front, work.title)
 
+    # Back matter from <back>, if present.  Like <front>, handled
+    # centrally before structural routing.
+    back = root.find(f".//{_ns('back')}")
+    if back is not None:
+        work.back_matter = _parse_back_matter(back, work.title)
+
     all_div1s = body.findall(_ns("div1"))
     if not all_div1s:
         # Some texts skip div1 and have div2 directly under body.
@@ -790,6 +796,40 @@ def _parse_front_preamble(front: etree._Element, work_title: str) -> Chapter | N
     return Chapter(
         heading=heading,
         sections=[Section(number="", blocks=front_blocks)],
+    )
+
+
+def _parse_back_matter(back: etree._Element, work_title: str) -> Chapter | None:
+    """Parse a <back> element into a back-matter Chapter.
+
+    Mirrors ``_parse_front_preamble`` but uses a default heading of
+    "Back Matter" instead of "Preamble".  All content inside ``<back>``
+    is flattened into a single Chapter; future work may want to preserve
+    multiple <div> children as separate chapters.
+    """
+    heading_elem: etree._Element | None = None
+    for child in back:
+        tag = etree.QName(child.tag).localname
+        if tag in ("div1", "div2", "div3", "div"):
+            heading_elem = child.find(_ns("head"))
+            if heading_elem is not None:
+                break
+    if heading_elem is None:
+        heading_elem = back.find(_ns("head"))
+    heading: InlineContent = (
+        _parse_inline(heading_elem)
+        if heading_elem is not None
+        else ([work_title] if work_title else ["Back Matter"])
+    )
+
+    back_blocks: list[Block] = []
+    for p in back.iter(_ns("p")):
+        back_blocks.extend(_parse_p_to_blocks(p))
+    if not back_blocks:
+        return None
+    return Chapter(
+        heading=heading,
+        sections=[Section(number="", blocks=back_blocks)],
     )
 
 

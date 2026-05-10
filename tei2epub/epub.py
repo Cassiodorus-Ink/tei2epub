@@ -221,6 +221,11 @@ def _build_book(
             _, link = _add_chapter(item)
             toc_entries.append(link)
 
+    # Back matter (appendix, index, etc.).
+    if work.back_matter is not None:
+        _, link = _add_chapter(work.back_matter)
+        toc_entries.append(link)
+
     # -- Navigation ----------------------------------------------------------
 
     # Find the cover page created by set_cover and include it in the

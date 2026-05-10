@@ -54,6 +54,12 @@ BODY_CHILDREN: frozenset[str] = frozenset({
     "front", "back", "note", "list", "l", "lg",
 })
 
+# Children of <front> and <back>.  The parser only walks <head>, <div>,
+# and <p> inside these; anything else is silently ignored.
+FRONT_BACK_CHILDREN: frozenset[str] = frozenset({
+    "head", "div", "div1", "div2", "div3", "p", "pb", "list", "l", "lg",
+})
+
 # Children of <list>: the parser recognises only <head> (caption) and
 # <item> (entry).  Other children are silently ignored.
 LIST_CHILDREN: frozenset[str] = frozenset({"head", "item"})
@@ -79,4 +85,6 @@ PARENT_ALLOWLISTS: dict[str, frozenset[str]] = {
     "i":       INLINE_TAGS,
     "emph":    INLINE_TAGS,
     "foreign": INLINE_TAGS,
+    "front":   FRONT_BACK_CHILDREN,
+    "back":    FRONT_BACK_CHILDREN,
 }
