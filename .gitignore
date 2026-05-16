@@ -25,3 +25,4 @@ venv/
 
 # Local data (TEI input files and EPUB output)
 local/
+local
