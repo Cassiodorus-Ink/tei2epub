@@ -49,6 +49,30 @@ b. Should `<b>` (HTML bold leak) produce a distinct `Bold` model node
    - Inspect `<hi rend="bold">` and route accordingly, treating bare
      `<b>` as a scan artefact to drop or italicise.
 
+## Verse lines (<l>) inside <p>: implicit VerseBlock splitting
+
+506 corpus files use bare `<l>` directly inside `<p>` for quoted verse,
+which is technically invalid in both TEI P4 and P5 (where `<l>` is
+block-level and should sit inside `<lg>`, not `<p>`).  Only 5 files use
+`<lg>` at all.  Currently these lines render as inline `<span>` elements
+with `<br/>`, losing block-level formatting; `rend="indent"` on a verse
+line inside `<p>` is also silently ignored because the CSS rule for
+`verse-indent` only covers the `blockquote.verse` context.
+
+Proposed fix: extend `_parse_p_to_blocks` to detect runs of `<l>`
+children and emit them as a `VerseBlock`, mirroring the existing
+`<list>`-inside-`<p>` split logic.  Edge cases to handle:
+
+  - Non-whitespace tail after `</l>` → ends the verse group, resumes
+    prose as a new Paragraph.
+  - `<pb>` between `<l>` siblings → transparent (page boundary only);
+    do not interrupt the verse group.
+  - `<note>` between `<l>` siblings → absorb as inline on the preceding
+    line, or skip; do not interrupt.
+  - Also add `"l"` to `P_CHILDREN` in coverage.py once implemented.
+
+Effort: ~30–40 lines in parse.py, plus coverage.py update.
+
 ## TL-7: <note> with block-level structural children (2026-05-03)
 
 New check added to the corpus checker.  Out of 296,162 <note> elements,
